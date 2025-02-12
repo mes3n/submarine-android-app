@@ -1,19 +1,20 @@
 import 'dart:io';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:loading_animation_widget/loading_animation_widget.dart';
 
-import 'local_wifi.dart';
 import 'palette.dart';
-import 'socket.dart';
+import 'transport.dart';
 
 enum ConnectionState { connected, loading, disconnected }
+
+enum ESCCalibration { min, max, none }
 
 class Settings extends StatefulWidget {
   final ConnectSocket socket;
 
-  const Settings({Key? key, required this.socket}) : super(key: key);
+  const Settings({super.key, required this.socket});
 
   @override
   State<StatefulWidget> createState() => SettingsState();
@@ -23,50 +24,30 @@ class SettingsState extends State<Settings> {
   static int portNum = defualtPortNum;
   static SocketHandshake handshake = defaultHandshake;
 
-  static List<String> localIPAddresses = [];
-
   static var connectionState = ConnectionState.disconnected;
 
-  bool isScanning = false;
-  Function cancelScan = () {};
-
-  double loadingProgress = 0.0;
+  static Set<String> hosts = {};
+  static StreamSubscription<String> scanSubscription =
+      Stream<String>.empty().listen((_) {});
+  static bool isScanning = false;
+  static double loadingProgress = 0.0;
 
   void getLocalIpAddresses() async {
-    if (!isScanning) {
-      isScanning = true;
-      cancelScan = await scanNetwork(updateLocalIPAdresses, (progress) {
-        print("Progress: $progress");
-        if (!mounted) {
+    if (isScanning) return;
+    isScanning = true;
+    scanSubscription = ConnectSocket.scanNetwork((progress) {
+      if (!mounted) {
+        loadingProgress = progress;
+      } else {
+        setState(() {
           loadingProgress = progress;
-        } else {
-          setState(() {
-            loadingProgress = progress;
-          });
-        }
-      }, () {
-        isScanning = false;
-      });
-    }
-  }
-
-  Function onIPAdressesUpdate = () {};
-  void updateLocalIPAdresses(String ip) async {
-    if (localIPAddresses.contains(ip)) return;
-
-    localIPAddresses.add(ip);
-    localIPAddresses.sort((a, b) {
-      try {
-        return int.parse(a.split('.').last)
-            .compareTo(int.parse(b.split('.').last));
-      } on FormatException catch (_) {
-        return a.compareTo(b);
+        });
       }
+    }).listen((host) {
+      hosts.add(host);
+    }, onDone: () {
+      isScanning = false;
     });
-
-    if (mounted) {
-      onIPAdressesUpdate();
-    }
   }
 
   Future<String?> getConnectionInfo(BuildContext context) async {
@@ -74,18 +55,20 @@ class SettingsState extends State<Settings> {
       context: context,
       builder: (context) {
         return StatefulBuilder(builder: (context, setState) {
-          onIPAdressesUpdate = () {
-            setState(() {});
-          };
+          scanSubscription.onData((host) {
+            setState(() {
+              hosts.add(host);
+            });
+          });
           return SimpleDialog(
             backgroundColor: palette.hHighlight,
             children: <Widget>[
-              ...localIPAddresses.map((ip) => SimpleDialogOption(
+              ...hosts.map((host) => SimpleDialogOption(
                     onPressed: () {
-                      Navigator.pop(context, ip);
+                      Navigator.pop(context, host);
                     },
                     child: Text(
-                      ip,
+                      host,
                       style: TextStyle(color: palette.text),
                     ),
                   )),
@@ -94,6 +77,7 @@ class SettingsState extends State<Settings> {
                   onPressed: () {
                     final textField = TextEditingController();
                     showText("Enter custom IP", textField).then((_) {
+                      if (!context.mounted) return;
                       Navigator.pop(context, textField.text);
                     });
                   },
@@ -115,7 +99,9 @@ class SettingsState extends State<Settings> {
       },
     );
 
-    onIPAdressesUpdate = () {};
+    scanSubscription.onData((host) {
+      hosts.add(host);
+    });
     return result;
   }
 
@@ -167,7 +153,8 @@ class SettingsState extends State<Settings> {
     return Container(
         alignment: AlignmentDirectional.topCenter,
         padding: const EdgeInsets.all(20),
-        child: Column(
+        child: SingleChildScrollView(
+            child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Text(
@@ -184,7 +171,7 @@ class SettingsState extends State<Settings> {
             ),
             const SizedBox(height: 16),
             Text(
-              "Connection",
+              "Submarine Connection",
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 20,
@@ -207,13 +194,13 @@ class SettingsState extends State<Settings> {
                     ),
                     onPressed: () async {
                       if (connectionState == ConnectionState.disconnected) {
-                        String ip = await getConnectionInfo(context) ?? "";
-                        if (ip.isNotEmpty) {
+                        String host = await getConnectionInfo(context) ?? "";
+                        if (host.isNotEmpty) {
                           setState(() {
                             connectionState = ConnectionState.loading;
                           });
                           SocketResult result = await widget.socket
-                              .connect(ip, portNum, handshake,
+                              .connect(host, portNum, handshake,
                                   onError: (SocketException error) {
                             setState(() {
                               connectionState = ConnectionState.disconnected;
@@ -225,7 +212,7 @@ class SettingsState extends State<Settings> {
                             });
                           });
                           if (result.ok) {
-                            updateLocalIPAdresses(ip);
+                            hosts.add(host);
                             setState(() {
                               connectionState = ConnectionState.connected;
                             });
@@ -268,13 +255,13 @@ class SettingsState extends State<Settings> {
                     ),
                     onPressed: isScanning
                         ? () async {
-                            await cancelScan();
+                            await scanSubscription.cancel();
                             setState(() {
                               isScanning = false;
                             });
                           }
                         : () {
-                            localIPAddresses = [];
+                            hosts.clear();
                             getLocalIpAddresses();
                             setState(() {
                               isScanning = true;
@@ -304,12 +291,79 @@ class SettingsState extends State<Settings> {
                           backgroundColor: palette.text,
                         ),
                       ],
-                    ))
+                    )),
+                const SizedBox(width: 16),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    minWidth: 128,
+                    maxHeight: 40,
+                  ),
+                  child: TextButton(
+                    style: TextButton.styleFrom(
+                      foregroundColor: palette.text,
+                      backgroundColor: palette.accent,
+                      textStyle: const TextStyle(fontSize: 16),
+                    ),
+                    onPressed: () async {
+                      if (connectionState == ConnectionState.disconnected) {
+                        showText("Requires an active connection");
+                        return;
+                      }
+                      final result = await showDialog<ESCCalibration>(
+                          context: context,
+                          builder: (context) {
+                            return StatefulBuilder(
+                                builder: (context, setState) {
+                              scanSubscription.onData((host) {
+                                setState(() {
+                                  hosts.add(host);
+                                });
+                              });
+                              return SimpleDialog(
+                                backgroundColor: palette.hHighlight,
+                                children: <Widget>[
+                                  ...{
+                                    'Send maximum values': ESCCalibration.max,
+                                    'Send minimum values': ESCCalibration.min,
+                                    'CANCEL': ESCCalibration.none,
+                                  }.entries.map((option) => SimpleDialogOption(
+                                        onPressed: () {
+                                          Navigator.pop(context, option.value);
+                                        },
+                                        child: Text(
+                                          option.key,
+                                          style: TextStyle(color: palette.text),
+                                        ),
+                                      )),
+                                ],
+                              );
+                            });
+                          });
+                      // ...dialogOptions,
+                      switch (result) {
+                        case ESCCalibration.max:
+                          widget.socket.motorSpeed(1.0);
+                          break;
+                        case ESCCalibration.min:
+                          widget.socket.motorSpeed(0.0);
+                          break;
+                        case ESCCalibration.none:
+                        default:
+                          break;
+                      }
+                    },
+                    child: const Text("Calibrate ESC"),
+                  ),
+                ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
+            Row(
+              children: <Widget>[],
+            ),
+            const SizedBox(height: 8),
             Text(
-              "Values",
+              "Network options",
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 20,
@@ -405,12 +459,12 @@ class SettingsState extends State<Settings> {
               children: <Widget>[],
             ),
           ],
-        ));
+        )));
   }
 
   @override
   void dispose() {
-    cancelScan();
+    scanSubscription.cancel();
     isScanning = false;
     super.dispose();
   }

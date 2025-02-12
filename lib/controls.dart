@@ -1,11 +1,8 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
-import 'dart:typed_data';
 
 import 'flutter_joystick/flutter_joystick.dart';
 
-import 'socket.dart';
+import 'transport.dart';
 import 'palette.dart';
 
 class Livestream extends StatelessWidget {
@@ -30,24 +27,13 @@ enum Steering { speed, angle }
 class Controls extends StatefulWidget {
   final ConnectSocket socket;
 
-  const Controls({Key? key, required this.socket}) : super(key: key);
+  const Controls({super.key, required this.socket});
 
   @override
   State<StatefulWidget> createState() => ControlsState();
 }
 
 class ControlsState extends State<Controls> {
-  double s = 0.0, x = 0.0, y = 0.0;
-  late Timer callbackTimer;
-
-  @override
-  void initState() {
-    callbackTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) {
-      send();
-    });
-    super.initState();
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -63,8 +49,8 @@ class ControlsState extends State<Controls> {
                 children: <Widget>[
                   Expanded(
                     child: Joystick(
-                      listener: (StickDragDetails details) {
-                        s = details.y;
+                      listener: (StickDragDetails details) async {
+                        await widget.socket.motorSpeed(details.y);
                       },
                       mode: JoystickMode.vertical,
                     ),
@@ -75,9 +61,9 @@ class ControlsState extends State<Controls> {
                   ),
                   Expanded(
                     child: Joystick(
-                      listener: (StickDragDetails details) {
-                        x = details.x;
-                        y = details.y;
+                      listener: (StickDragDetails details) async {
+                        await widget.socket.steerX(details.x);
+                        await widget.socket.steerY(details.y);
                       },
                       mode: JoystickMode.all,
                     ),
@@ -89,26 +75,5 @@ class ControlsState extends State<Controls> {
         ),
       ),
     );
-  }
-
-  void send() {
-    if (widget.socket.enabled) {
-      ByteData data = ByteData.sublistView(Int8List(12));
-
-      // because each float has reversed bytes, this will be reversed
-      data.setFloat32(0, y);
-      data.setFloat32(4, x);
-      data.setFloat32(8, s);
-
-      // then this has to be reversed to set each float byte in the right direction and at the right place
-      widget.socket.send(List.from(data.buffer.asUint8List().reversed));
-      // print(data.buffer.asUint8List().toList());
-    }
-  }
-
-  @override
-  void dispose() {
-    callbackTimer.cancel();
-    super.dispose();
   }
 }

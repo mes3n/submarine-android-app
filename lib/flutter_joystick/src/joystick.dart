@@ -36,7 +36,7 @@ class Joystick extends StatefulWidget {
   final Function? onStickDragEnd;
 
   const Joystick({
-    Key? key,
+    super.key,
     required this.listener,
     this.period = const Duration(milliseconds: 100),
     this.base,
@@ -46,13 +46,13 @@ class Joystick extends StatefulWidget {
     // this.controller,
     this.onStickDragStart,
     this.onStickDragEnd,
-  }) : super(key: key);
+  });
 
   @override
-  _JoystickState createState() => _JoystickState();
+  JoystickState createState() => JoystickState();
 }
 
-class _JoystickState extends State<Joystick> {
+class JoystickState extends State<Joystick> {
   // add function for locking control
   final GlobalKey _baseKey = GlobalKey();
 

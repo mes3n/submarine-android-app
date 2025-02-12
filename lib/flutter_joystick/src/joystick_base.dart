@@ -9,8 +9,8 @@ class JoystickBase extends StatelessWidget {
 
   const JoystickBase({
     this.mode = JoystickMode.all,
-    Key? key,
-  }) : super(key: key);
+    super.key,
+  });
 
   @override
   Widget build(BuildContext context) {

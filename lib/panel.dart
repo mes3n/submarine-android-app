@@ -1,28 +1,28 @@
 import 'package:flutter/material.dart';
 
-import 'control_panel.dart';
-import 'settings_panel.dart';
+import 'controls.dart';
+import 'settings.dart';
 
 import 'palette.dart';
 
-import 'socket.dart';
+import 'transport.dart';
 
 enum WidgetMarker { controls, settings }
 
 class MainPanel extends StatefulWidget {
-  const MainPanel({Key? key}) : super(key: key);
+  const MainPanel({super.key});
 
   @override
   State<StatefulWidget> createState() => MainPanelState();
 }
 
 class MainPanelState extends State<MainPanel> {
-  var selectedWidget = WidgetMarker.controls;
-  var socket = ConnectSocket();
+  var _selectedWidget = WidgetMarker.controls;
+  static final _socket = ConnectSocket();
 
-  static Map<WidgetMarker, Widget> widgetMap = {
-    WidgetMarker.controls: Controls(socket: ConnectSocket()),
-    WidgetMarker.settings: Settings(socket: ConnectSocket()),
+  static final Map<WidgetMarker, Widget> _widgetMap = {
+    WidgetMarker.controls: Controls(socket: _socket),
+    WidgetMarker.settings: Settings(socket: _socket),
   };
 
   @override
@@ -33,7 +33,7 @@ class MainPanelState extends State<MainPanel> {
         children: <Widget>[
           Align(
             alignment: Alignment.center,
-            child: widgetMap[selectedWidget],
+            child: _widgetMap[_selectedWidget],
           ),
           Align(
             alignment: const Alignment(0.98, 0.95),
@@ -63,7 +63,7 @@ class MainPanelState extends State<MainPanel> {
                     ),
                     onTap: () {
                       setState(() {
-                        selectedWidget = WidgetMarker.settings;
+                        _selectedWidget = WidgetMarker.settings;
                       });
                     },
                   ),
@@ -82,7 +82,7 @@ class MainPanelState extends State<MainPanel> {
                     ),
                     onTap: () {
                       setState(() {
-                        selectedWidget = WidgetMarker.controls;
+                        _selectedWidget = WidgetMarker.controls;
                       });
                     },
                   ),
@@ -97,16 +97,7 @@ class MainPanelState extends State<MainPanel> {
 
   @override
   void dispose() {
-    socket.close();
+    _socket.close();
     super.dispose();
-  }
-
-  Widget getCustomContainer() {
-    switch (selectedWidget) {
-      case WidgetMarker.controls:
-        return Controls(socket: socket);
-      case WidgetMarker.settings:
-        return Settings(socket: socket);
-    }
   }
 }

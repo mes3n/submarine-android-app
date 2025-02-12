@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../palette.dart';
 
 class JoystickStick extends StatelessWidget {
-  const JoystickStick({Key? key}) : super(key: key);
+  const JoystickStick({super.key});
   @override
   Widget build(BuildContext context) {
     return Container(
